@@ -7,7 +7,10 @@
 сообщение
 ### Архитектура
 
-Загрузчик реализован с помощью классов [Process](https://docs-python.ru/standart-library/paket-multiprocessing-python/funktsija-process-modulja-multiprocessing/) и [Queue](https://docs-python.ru/standart-library/paket-multiprocessing-python/klass-queue-modulja-multiprocessing/) из модуля [multiprocessing](https://docs-python.ru/standart-library/paket-multiprocessing-python/)
+Загрузчик реализован с помощью классов [Process](https://docs-python.ru/standart-library/paket-multiprocessing-python/funktsija-process-modulja-multiprocessing/) 
+и [Queue](https://docs-python.ru/standart-library/paket-multiprocessing-python/klass-queue-modulja-multiprocessing/) 
+из модуля [multiprocessing](https://docs-python.ru/standart-library/paket-multiprocessing-python/),
+количество процессов задается по количеству ядер процессора с помощья функции [multiprocessing.cpu_count()]()
 ### Ссылĸи на tsv.gz лог-файлы:
 https://cloud.mail.ru/public/2hZL/Ko9s8R9TA
 

@@ -3,12 +3,13 @@
 # pip install python-memcached
 # brew install protobuf
 # protoc  --python_out=. ./appsinstalled.proto
-import collections
+
 import glob
 import gzip
 import logging
 import os
 import sys
+from collections import defaultdict, namedtuple
 from datetime import datetime
 from itertools import islice
 from multiprocessing import Process, Queue, current_process, cpu_count
@@ -24,7 +25,7 @@ import appsinstalled_pb2
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION = cpp
 NORMAL_ERR_RATE = 0.01
 BATCH_SIZE = 10000
-AppsInstalled = collections.namedtuple(
+AppsInstalled = namedtuple(
     "AppsInstalled", ["dev_type", "dev_id", "lat", "lon", "apps"]
 )
 
@@ -54,22 +55,28 @@ def dot_rename(path):
     os.rename(path, os.path.join(head, "." + filename))
 
 
-def insert_appsinstalled(memc_addr, appsinstalled, dry_run=False):
-    ua = appsinstalled_pb2.UserApps()
-    ua.lat = appsinstalled.lat
-    ua.lon = appsinstalled.lon
-    key = "%s:%s" % (appsinstalled.dev_type, appsinstalled.dev_id)
-    ua.apps.extend(appsinstalled.apps)
-    packed = ua.SerializeToString()
-    try:
+def insert_appsinstalled(memc_addr, memc_client, apps_list, dry_run=False):
+    packed_dict = {}
+    for appsinstalled in apps_list:
+        ua = appsinstalled_pb2.UserApps()
+        ua.lat = appsinstalled.lat
+        ua.lon = appsinstalled.lon
+        key = "%s:%s" % (appsinstalled.dev_type, appsinstalled.dev_id)
+        ua.apps.extend(appsinstalled.apps)
+        packed = ua.SerializeToString()
+
         if dry_run:
             logging.debug("%s - %s -> %s", (memc_addr, key, str(ua).replace("\n", " ")))
         else:
-            MyRetryingClient().get_client(memc_addr).set(key, packed)
-    except Exception as ex:
-        logging.exception("Cannot write to memc %s: %s", memc_addr, ex)
-        return False
-    return True
+            # MyRetryingClient().get_client(memc_addr).set(key, packed)
+            packed_dict[key] = packed
+    if not dry_run:
+        try:
+            failed_keys = len(memc_client.set_multi(packed_dict))
+            return len(packed_dict) - failed_keys, failed_keys
+        except Exception as ex:
+            logging.exception("Cannot write to memc %s: %s", memc_addr, ex)
+            return False, len(packed_dict)
 
 
 def parse_appsinstalled(line):
@@ -149,6 +156,7 @@ def process_batch(batch, options):
     }
     processed, errors = 0, 0
     logging.info("%s processing batch", current_process())
+    apps_dict = defaultdict(list)
     for line in batch:
         line = line.strip()
         if not line:
@@ -162,12 +170,21 @@ def process_batch(batch, options):
             errors += 1
             logging.error("Unknow device type: %s", appsinstalled.dev_type)
             continue
+        # ok = insert_appsinstalled(memc_addr, appsinstalled, False)
+        # if ok:
+        #     processed += 1
+        # else:
+        #     errors += 1
 
-        ok = insert_appsinstalled(memc_addr, appsinstalled, False)
-        if ok:
-            processed += 1
-        else:
-            errors += 1
+        apps_dict[memc_addr].append(appsinstalled)
+
+    for key, value in apps_dict.items():
+        ok, err = insert_appsinstalled(
+            key, MyRetryingClient().get_client(key), value, False
+        )
+        processed += ok
+        errors += err
+
     return processed, errors
 
 
